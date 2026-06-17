@@ -25,12 +25,13 @@ export interface DeploymentModel {
 
 /**
  * Candidate api-versions for the data-plane deployments list, tried in order
- * until one returns data. Newer resources speak the GA version; classic Azure
- * OpenAI resources may only answer the older preview version.
+ * until one returns data. Newer Azure OpenAI resources answer the GA
+ * versions; `services.ai.azure.com` (Foundry) resources currently only serve
+ * the deployments list under the older `2023-03-15-preview` version, so it is
+ * kept as the final fallback.
  */
 const DEPLOYMENT_API_VERSIONS = [
   DEFAULT_API_VERSION,
-  "2024-10-21",
   "2023-05-15",
   "2023-03-15-preview",
 ];
