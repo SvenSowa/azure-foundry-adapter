@@ -12,18 +12,17 @@ import { models, agentConfigurationDoc } from "../index.js";
 export { execute, testEnvironment, detectModel, listSkills, syncSkills, listDeployments };
 
 /**
- * Merge live Azure deployments with the static suggestion list.
+ * Resolve the deployment picker options.
  *
- * Live deployments (fetched with the server-level Foundry credentials) take
- * precedence and appear first; any static suggestion not already covered is
- * appended so the picker is never empty even before a resource is wired up.
+ * When live Azure deployments are discoverable (server-level Foundry
+ * credentials are configured), they are the single source of truth — only
+ * real deployments are returned. The static suggestion list is used solely as
+ * a fallback so the picker is never empty before a resource is wired up.
  */
 async function resolveModels(force = false): Promise<DeploymentModel[]> {
   const live = await listDeployments({ force });
   if (live.length === 0) return models;
-  const seen = new Set(live.map((m) => m.id));
-  const extras = models.filter((m) => !seen.has(m.id));
-  return [...live, ...extras];
+  return live;
 }
 
 function readNonEmptyString(value: unknown): string | null {
