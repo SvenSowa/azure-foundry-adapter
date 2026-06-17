@@ -54,7 +54,9 @@ export async function testEnvironment(
     .trim()
     .replace(/\/+$/, "");
   const apiKey = (asString(config.apiKey) || process.env.AZURE_FOUNDRY_API_KEY || "").trim();
-  const deployment = asString(config.deployment).trim();
+  // Paperclip's native Model dropdown writes the selection to config.model;
+  // config.deployment is accepted for back-compat. Either is the Azure deployment.
+  const deployment = (asString(config.deployment) || asString(config.model)).trim();
 
   if (!endpoint) {
     checks.push({

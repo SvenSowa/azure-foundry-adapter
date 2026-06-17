@@ -63,7 +63,10 @@ const chatTurnRunner: TurnRunner<ChatMessage[]> = {
       .trim()
       .replace(/\/+$/, "");
     const apiKey = resolveApiKey(cfg);
-    const deployment = String(cfg.deployment ?? DEFAULT_DEPLOYMENT).trim();
+    // Paperclip's native Model dropdown writes the selection to cfg.model;
+    // cfg.deployment is accepted for back-compat. Either is the Azure deployment.
+    const deployment =
+      String(cfg.deployment ?? cfg.model ?? DEFAULT_DEPLOYMENT).trim();
     const apiVersion = String(cfg.apiVersion ?? DEFAULT_API_VERSION).trim();
 
     truncateOlderToolResults(state);

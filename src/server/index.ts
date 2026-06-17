@@ -40,11 +40,7 @@ function readNonEmptyString(value: unknown): string | null {
  * live deployments (fetched via server-level Foundry credentials). Falls back
  * to the static suggestion list when no credentials are configured yet.
  */
-async function getConfigSchema() {
-  const deploymentOptions = (await resolveModels()).map((m) => ({
-    value: m.id,
-    label: m.label,
-  }));
+function getConfigSchema() {
   return {
     fields: [
       {
@@ -61,16 +57,6 @@ async function getConfigSchema() {
         type: "text" as const,
         required: true,
         hint: "Resource API key. Stored encrypted as a Paperclip secret.",
-        group: "Connection",
-      },
-      {
-        key: "deployment",
-        label: "Deployment",
-        type: "combobox" as const,
-        required: true,
-        default: deploymentOptions[0]?.value ?? "gpt-5-5",
-        options: deploymentOptions,
-        hint: "Azure-side deployment name. Live deployments are listed automatically; you can also type a custom name and press Enter.",
         group: "Connection",
       },
       {
