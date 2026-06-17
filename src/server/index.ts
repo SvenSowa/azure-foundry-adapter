@@ -6,9 +6,25 @@ import { execute } from "./execute.js";
 import { testEnvironment } from "./test.js";
 import { detectModel } from "./detect-model.js";
 import { listSkills, syncSkills } from "./skills.js";
+import { listDeployments, type DeploymentModel } from "./deployments.js";
 import { models, agentConfigurationDoc } from "../index.js";
 
-export { execute, testEnvironment, detectModel, listSkills, syncSkills };
+export { execute, testEnvironment, detectModel, listSkills, syncSkills, listDeployments };
+
+/**
+ * Merge live Azure deployments with the static suggestion list.
+ *
+ * Live deployments (fetched with the server-level Foundry credentials) take
+ * precedence and appear first; any static suggestion not already covered is
+ * appended so the picker is never empty even before a resource is wired up.
+ */
+async function resolveModels(force = false): Promise<DeploymentModel[]> {
+  const live = await listDeployments({ force });
+  if (live.length === 0) return models;
+  const seen = new Set(live.map((m) => m.id));
+  const extras = models.filter((m) => !seen.has(m.id));
+  return [...live, ...extras];
+}
 
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
@@ -20,8 +36,16 @@ function readNonEmptyString(value: unknown): string | null {
  * Declarative config schema — the Paperclip UI fetches this from
  * GET /api/adapters/azure_foundry/config-schema and renders the right
  * form fields automatically (labels, hints, types, dropdowns).
+ *
+ * Async so the `deployment` combobox can be populated with the resource's
+ * live deployments (fetched via server-level Foundry credentials). Falls back
+ * to the static suggestion list when no credentials are configured yet.
  */
-function getConfigSchema() {
+async function getConfigSchema() {
+  const deploymentOptions = (await resolveModels()).map((m) => ({
+    value: m.id,
+    label: m.label,
+  }));
   return {
     fields: [
       {
@@ -45,9 +69,9 @@ function getConfigSchema() {
         label: "Deployment",
         type: "combobox" as const,
         required: true,
-        default: "gpt-5-5",
-        options: models.map((m) => ({ value: m.id, label: m.label })),
-        hint: "Azure-side deployment name. Must match exactly.",
+        default: deploymentOptions[0]?.value ?? "gpt-5-5",
+        options: deploymentOptions,
+        hint: "Azure-side deployment name. Live deployments are listed automatically; you can also type a custom name and press Enter.",
         group: "Connection",
       },
       {
@@ -144,6 +168,8 @@ export function createServerAdapter() {
     instructionsPathKey: "instructionsFilePath",
     agentConfigurationDoc,
     getConfigSchema,
+    listModels: async () => resolveModels(),
+    refreshModels: async () => resolveModels(true),
     detectModel: async () => {
       const d = detectModel();
       return { model: d.model, provider: "azure_foundry", source: d.source };
