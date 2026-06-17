@@ -257,7 +257,7 @@ export async function runAgentLoop<TState>(
 
   await emitLog(
     ctx,
-    `Foundry run: surface=${runner.surface} deployment=${cfg.deployment ?? "(default)"} toolLoop=${enableToolLoop} maxHops=${maxToolHops}`,
+    `Foundry run: surface=${runner.surface} deployment=${cfg.deployment ?? cfg.model ?? "(default)"} toolLoop=${enableToolLoop} maxHops=${maxToolHops}`,
   );
 
   // Build prompt + instructions and the runner-specific initial state.

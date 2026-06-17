@@ -132,7 +132,7 @@ const responsesTurnRunner: TurnRunner<ResponsesState> = {
 
   async runTurn({ ctx, state, tools, abort }) {
     const cfg = ctx.config;
-    const endpoint = String(cfg.endpoint ?? "")
+    const endpoint = String(cfg.endpoint ?? process.env.AZURE_FOUNDRY_ENDPOINT ?? "")
       .trim()
       .replace(/\/+$/, "");
     const apiKey = resolveApiKey(cfg);
