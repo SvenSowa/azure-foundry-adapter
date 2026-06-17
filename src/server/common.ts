@@ -210,6 +210,30 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * Determine how long to wait before retrying a 429, honoring (in priority
+ * order) Azure's millisecond-precision `retry-after-ms`, the standard
+ * `retry-after` (seconds), then exponential backoff. Returns the raw value in
+ * ms (before the max-wait cap is applied).
+ */
+function parseRetryAfterMs(headers: Headers, attempt: number): number {
+  const retryAfterMs = Number(headers.get("retry-after-ms"));
+  if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) return retryAfterMs;
+  const retryAfter = Number(headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+  return RATE_LIMIT_BASE_MS * Math.pow(2, attempt);
+}
+
+/** Compact summary of Azure's remaining-quota headers for diagnostics. */
+function rateLimitHeaderSummary(headers: Headers): string {
+  const parts: string[] = [];
+  const remTokens = headers.get("x-ratelimit-remaining-tokens");
+  const remReqs = headers.get("x-ratelimit-remaining-requests");
+  if (remTokens !== null) parts.push(`remaining-tokens=${remTokens}`);
+  if (remReqs !== null) parts.push(`remaining-requests=${remReqs}`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
 export async function postWithRateLimitRetry(
   url: string,
   apiKey: string,
@@ -230,14 +254,12 @@ export async function postWithRateLimitRetry(
       signal: ctrl.signal,
     });
     if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) return res;
-    const retryAfter = Number(res.headers.get("retry-after"));
-    const rawDelayMs =
-      Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter * 1000
-        : RATE_LIMIT_BASE_MS * Math.pow(2, attempt);
-    const delayMs = Math.min(rawDelayMs, RATE_LIMIT_MAX_WAIT_MS);
+    const delayMs = Math.min(
+      parseRetryAfterMs(res.headers, attempt),
+      RATE_LIMIT_MAX_WAIT_MS,
+    );
     await log(
-      `Foundry 429 (rate limited) — backing off ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES})`,
+      `Foundry 429 (rate limited) — backing off ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES})${rateLimitHeaderSummary(res.headers)}`,
     );
     await res.text().catch(() => "");
     // Abort-aware wait: if the run times out or is cancelled mid-backoff, stop
