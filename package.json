@@ -1,13 +1,13 @@
 {
   "name": "@xcreos/azure-foundry-adapter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Paperclip adapter for Azure AI Foundry \u2014 handles both chat-completions and Responses API deployments transparently",
   "type": "module",
   "license": "MIT",
   "author": "XCreos",
   "repository": {
     "type": "git",
-    "url": "https://github.com/claudiosanchez/azure-foundry-adapter"
+    "url": "https://github.com/SvenSowa/azure-foundry-adapter"
   },
   "keywords": [
     "paperclip",
