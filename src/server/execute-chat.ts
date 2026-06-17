@@ -86,6 +86,11 @@ const chatTurnRunner: TurnRunner<ChatMessage[]> = {
     const res = await postWithRateLimitRetry(url, apiKey, body, abort, (m) => emitLog(ctx, m));
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");
+      if (res.status === 429) {
+        throw new Error(
+          `Azure rate limit (HTTP 429) — the deployment's Tokens-Per-Minute (TPM) quota is exhausted and retries did not clear it. Raise the deployment's rate limit in Azure AI Foundry or lower request volume/concurrency. ${text.slice(0, 300)}`,
+        );
+      }
       throw new Error(`Foundry HTTP ${res.status}: ${text.slice(0, 500)}`);
     }
 

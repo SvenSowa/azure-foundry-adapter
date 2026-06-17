@@ -187,6 +187,28 @@ export function resolveApiKey(cfg: AzureFoundryConfig): string {
 
 const RATE_LIMIT_RETRIES = 4;
 const RATE_LIMIT_BASE_MS = 1500;
+// Don't honor an absurd Retry-After that would blow the run's time budget; cap
+// the wait so we fail fast with a clear message instead of stalling.
+const RATE_LIMIT_MAX_WAIT_MS = 30_000;
+
+/** Sleep that resolves early (rejecting) if the abort signal fires. */
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted during rate-limit backoff", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted during rate-limit backoff", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 export async function postWithRateLimitRetry(
   url: string,
@@ -209,13 +231,18 @@ export async function postWithRateLimitRetry(
     });
     if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) return res;
     const retryAfter = Number(res.headers.get("retry-after"));
-    const delayMs =
+    const rawDelayMs =
       Number.isFinite(retryAfter) && retryAfter > 0
         ? retryAfter * 1000
         : RATE_LIMIT_BASE_MS * Math.pow(2, attempt);
-    await log(`Foundry 429 — backing off ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES})`);
+    const delayMs = Math.min(rawDelayMs, RATE_LIMIT_MAX_WAIT_MS);
+    await log(
+      `Foundry 429 (rate limited) — backing off ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES})`,
+    );
     await res.text().catch(() => "");
-    await new Promise<void>((r) => setTimeout(r, delayMs));
+    // Abort-aware wait: if the run times out or is cancelled mid-backoff, stop
+    // immediately rather than sleeping out the full Retry-After.
+    await abortableDelay(delayMs, ctrl.signal);
     attempt++;
   }
 }
@@ -274,7 +301,11 @@ export async function runAgentLoop<TState>(
 
   // Timeout / abort plumbing.
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeoutMs);
   if (ctx.signal) {
     ctx.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
   }
@@ -387,10 +418,18 @@ export async function runAgentLoop<TState>(
       toolHops,
     };
   } catch (err) {
-    await emit(ctx, { kind: "error", message: (err as Error).message });
+    const e = err as Error;
+    const aborted = e?.name === "AbortError" || /\baborted\b/i.test(e?.message ?? "");
+    let message = e?.message ?? String(err);
+    if (aborted) {
+      message = timedOut
+        ? `Run timed out after ${Math.round(timeoutMs / 1000)}s. The Azure deployment was rate-limiting (HTTP 429) and the model did not respond in time. Increase the deployment's Tokens-Per-Minute (TPM) rate limit in Azure AI Foundry, or reduce request volume/concurrency.`
+        : "Run was cancelled before completion.";
+    }
+    await emit(ctx, { kind: "error", message });
     return {
       exitCode: 1,
-      finishReason: "exception",
+      finishReason: timedOut ? "timeout" : aborted ? "aborted" : "exception",
       outputText: finalText,
       usage: { input: totalInput, output: totalOutput, reasoning: totalReasoning },
       toolHops,
